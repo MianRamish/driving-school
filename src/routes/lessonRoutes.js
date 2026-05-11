@@ -12,7 +12,7 @@ const {
   sendLessonAssignedToInstructorEmail,
   sendLessonCancellationEmails,
   sendLessonRescheduledEmails,
-  sendEmailSafely
+  runEmailJob
 } = require('../utils/email');
 
 const router = express.Router();
@@ -140,7 +140,7 @@ router.post('/', protect, async (req, res) => {
 
   const populated = await populateLesson(lesson._id);
 
-  await sendEmailSafely('student lesson assigned email', sendStudentLessonAssignedEmail({ lesson: populated }));
+  runEmailJob('student lesson assigned email', () => sendStudentLessonAssignedEmail({ lesson: populated }));
 
   if (req.user.role === 'admin') {
     await Notification.create({
@@ -151,9 +151,9 @@ router.post('/', protect, async (req, res) => {
       message: `${populated.student?.firstName || 'A student'} ${populated.student?.lastName || ''} has been scheduled for ${date} at ${startTime}.`.trim()
     });
 
-    await sendEmailSafely('instructor lesson assigned/reassigned email', sendLessonAssignedToInstructorEmail({ lesson: populated }));
+    runEmailJob('instructor lesson assigned/reassigned email', () => sendLessonAssignedToInstructorEmail({ lesson: populated }));
   } else {
-    await sendEmailSafely('admin lesson created email', sendLessonCreatedByInstructorEmail({ User, lesson: populated }));
+    runEmailJob('admin lesson created email', () => sendLessonCreatedByInstructorEmail({ User, lesson: populated }));
   }
 
   res.status(201).json(populated);
@@ -219,9 +219,9 @@ router.put('/:id', protect, async (req, res) => {
   const populated = await populateLesson(lesson._id);
 
   if (becameCancelled) {
-    await sendEmailSafely('lesson cancellation emails', sendLessonCancellationEmails({ lesson: populated }));
+    runEmailJob('lesson cancellation emails', () => sendLessonCancellationEmails({ lesson: populated }));
   } else if (scheduleChanged) {
-    await sendEmailSafely('lesson rescheduled emails', sendLessonRescheduledEmails({ lesson: populated, previousLesson: previousPopulated }));
+    runEmailJob('lesson rescheduled emails', () => sendLessonRescheduledEmails({ lesson: populated, previousLesson: previousPopulated }));
   }
 
   if (req.user.role === 'admin' && String(populated.instructor?._id || populated.instructor) !== previousInstructor) {
@@ -233,7 +233,7 @@ router.put('/:id', protect, async (req, res) => {
       message: `${populated.student?.firstName || 'A student'} ${populated.student?.lastName || ''} has been assigned to you for ${populated.date} at ${populated.startTime}.`.trim()
     });
 
-    await sendEmailSafely('instructor lesson assigned/reassigned email', sendLessonAssignedToInstructorEmail({ lesson: populated }));
+    runEmailJob('instructor lesson assigned/reassigned email', () => sendLessonAssignedToInstructorEmail({ lesson: populated }));
   }
 
   res.json(populated);
@@ -245,7 +245,7 @@ router.delete('/:id', protect, adminOnly, async (req, res) => {
   if (!deleted) return res.status(404).json({ message: 'Lesson not found' });
 
   if (existing && existing.status !== 'cancelled') {
-    await sendEmailSafely('lesson deletion cancellation emails', sendLessonCancellationEmails({ lesson: existing }));
+    runEmailJob('lesson deletion cancellation emails', () => sendLessonCancellationEmails({ lesson: existing }));
   }
 
   res.json({ message: 'Lesson deleted' });
