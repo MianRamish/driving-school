@@ -1,0 +1,137 @@
+const nodemailer = require('nodemailer');
+const {
+  fullName,
+  studentWelcomeTemplate,
+  studentLessonAssignedTemplate,
+  lessonReminderTemplate,
+  lessonCancelledTemplate,
+  lessonRescheduledTemplate,
+  adminStudentCreatedTemplate,
+  adminLessonCreatedTemplate,
+  instructorLessonAssignedTemplate
+} = require('./emailTemplates');
+
+const smtpConfigured = () => Boolean(
+  process.env.SMTP_HOST &&
+  process.env.SMTP_PORT &&
+  process.env.SMTP_USER &&
+  process.env.SMTP_PASS
+);
+
+const createTransporter = () => {
+  if (!smtpConfigured()) return null;
+
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT),
+    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+};
+
+const formatRecipients = (recipients = []) => {
+  if (!Array.isArray(recipients)) return [];
+  return recipients.filter(Boolean).filter((email, index, arr) => arr.indexOf(email) === index);
+};
+
+const sendEmail = async ({ to, subject, html, text }) => {
+  const recipients = formatRecipients(Array.isArray(to) ? to : [to]);
+  if (!recipients.length) return { skipped: true, reason: 'No recipients' };
+
+  const transporter = createTransporter();
+  if (!transporter) {
+    console.warn(`Email skipped because SMTP is not configured. Subject: ${subject}`);
+    return { skipped: true, reason: 'SMTP not configured' };
+  }
+
+  const from = process.env.EMAIL_FROM || process.env.SMTP_USER;
+
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to: recipients.join(','),
+      subject,
+      text,
+      html
+    });
+    return { skipped: false, messageId: info.messageId };
+  } catch (error) {
+    console.error('Email send failed:', error.message);
+    return { skipped: true, reason: error.message };
+  }
+};
+
+const getAdminEmails = async (User) => {
+  const admins = await User.find({ role: 'admin', active: true }).select('email').lean();
+  return admins.map((admin) => admin.email).filter(Boolean);
+};
+
+const sendTemplate = ({ to, template }) => sendEmail({ to, ...template });
+
+const sendStudentWelcomeEmail = async ({ student }) => {
+  if (!student?.email) return { skipped: true, reason: 'Student email missing' };
+  return sendTemplate({ to: student.email, template: studentWelcomeTemplate({ student }) });
+};
+
+const sendStudentLessonAssignedEmail = async ({ lesson }) => {
+  if (!lesson.student?.email) return { skipped: true, reason: 'Student email missing' };
+  return sendTemplate({ to: lesson.student.email, template: studentLessonAssignedTemplate({ lesson }) });
+};
+
+const sendLessonReminderEmails = async ({ lesson }) => Promise.all([
+  lesson.student?.email
+    ? sendTemplate({ to: lesson.student.email, template: lessonReminderTemplate({ lesson, recipientType: 'student' }) })
+    : Promise.resolve({ skipped: true, reason: 'Student email missing' }),
+  lesson.instructor?.email
+    ? sendTemplate({ to: lesson.instructor.email, template: lessonReminderTemplate({ lesson, recipientType: 'instructor' }) })
+    : Promise.resolve({ skipped: true, reason: 'Instructor email missing' })
+]);
+
+const sendLessonCancellationEmails = async ({ lesson }) => Promise.all([
+  lesson.student?.email
+    ? sendTemplate({ to: lesson.student.email, template: lessonCancelledTemplate({ lesson, recipientType: 'student' }) })
+    : Promise.resolve({ skipped: true, reason: 'Student email missing' }),
+  lesson.instructor?.email
+    ? sendTemplate({ to: lesson.instructor.email, template: lessonCancelledTemplate({ lesson, recipientType: 'instructor' }) })
+    : Promise.resolve({ skipped: true, reason: 'Instructor email missing' })
+]);
+
+const sendLessonRescheduledEmails = async ({ lesson, previousLesson }) => Promise.all([
+  lesson.student?.email
+    ? sendTemplate({ to: lesson.student.email, template: lessonRescheduledTemplate({ lesson, previousLesson, recipientType: 'student' }) })
+    : Promise.resolve({ skipped: true, reason: 'Student email missing' }),
+  lesson.instructor?.email
+    ? sendTemplate({ to: lesson.instructor.email, template: lessonRescheduledTemplate({ lesson, previousLesson, recipientType: 'instructor' }) })
+    : Promise.resolve({ skipped: true, reason: 'Instructor email missing' })
+]);
+
+const sendStudentCreatedByInstructorEmail = async ({ User, student, instructor }) => {
+  const adminEmails = await getAdminEmails(User);
+  return sendTemplate({ to: adminEmails, template: adminStudentCreatedTemplate({ student, instructor }) });
+};
+
+const sendLessonCreatedByInstructorEmail = async ({ User, lesson }) => {
+  const adminEmails = await getAdminEmails(User);
+  return sendTemplate({ to: adminEmails, template: adminLessonCreatedTemplate({ lesson }) });
+};
+
+const sendLessonAssignedToInstructorEmail = async ({ lesson }) => {
+  if (!lesson.instructor?.email) return { skipped: true, reason: 'Instructor email missing' };
+  return sendTemplate({ to: lesson.instructor.email, template: instructorLessonAssignedTemplate({ lesson }) });
+};
+
+module.exports = {
+  sendEmail,
+  fullName,
+  sendStudentWelcomeEmail,
+  sendStudentLessonAssignedEmail,
+  sendLessonReminderEmails,
+  sendLessonCancellationEmails,
+  sendLessonRescheduledEmails,
+  sendStudentCreatedByInstructorEmail,
+  sendLessonCreatedByInstructorEmail,
+  sendLessonAssignedToInstructorEmail
+};
