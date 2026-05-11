@@ -5,7 +5,7 @@ const { protect } = require('../middleware/auth');
 const {
   sendStudentCreatedByInstructorEmail,
   sendStudentWelcomeEmail,
-  sendEmailSafely
+  runEmailJob
 } = require('../utils/email');
 
 const router = express.Router();
@@ -62,18 +62,17 @@ router.post('/', protect, async (req, res) => {
   const student = await Student.create(payload);
   const populated = await Student.findById(student._id).populate('assignedInstructor', 'name email phone postalCodes');
 
-  await Promise.all([
-    sendEmailSafely('student welcome email', sendStudentWelcomeEmail({ student: populated })),
-    req.user.role === 'instructor'
-      ? sendEmailSafely('admin new student email', sendStudentCreatedByInstructorEmail({
-          User,
-          student: populated,
-          instructor: req.user
-        }))
-      : Promise.resolve()
-  ]);
-
   res.status(201).json(populated);
+
+  runEmailJob('student welcome email', () => sendStudentWelcomeEmail({ student: populated }));
+
+  if (req.user.role === 'instructor') {
+    runEmailJob('admin new student email', () => sendStudentCreatedByInstructorEmail({
+      User,
+      student: populated,
+      instructor: req.user
+    }));
+  }
 });
 
 router.put('/:id', protect, async (req, res) => {
