@@ -79,9 +79,9 @@ const sendTemplate = async ({ to, template }) => {
   }
 };
 
-const sendEmailSafely = async (label, emailPromise) => {
+const sendEmailSafely = async (label, emailJob) => {
   try {
-    const result = await emailPromise;
+    const result = typeof emailJob === 'function' ? await emailJob() : await emailJob;
     if (Array.isArray(result)) {
       result.forEach((item) => {
         if (item?.skipped) console.warn(`[Email skipped] ${label}: ${item.reason}`);
@@ -94,6 +94,14 @@ const sendEmailSafely = async (label, emailPromise) => {
     console.error(`[Email failed] ${label}:`, error.message);
     return { skipped: true, reason: error.message };
   }
+};
+
+const runEmailJob = (label, emailJob) => {
+  setImmediate(() => {
+    sendEmailSafely(label, emailJob).catch((error) => {
+      console.error(`[Email background failed] ${label}:`, error.message);
+    });
+  });
 };
 
 
@@ -152,6 +160,7 @@ const sendLessonAssignedToInstructorEmail = async ({ lesson }) => {
 module.exports = {
   sendEmail,
   sendEmailSafely,
+  runEmailJob,
   fullName,
   sendStudentWelcomeEmail,
   sendStudentLessonAssignedEmail,
