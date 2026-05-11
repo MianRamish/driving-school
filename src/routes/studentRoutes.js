@@ -1,7 +1,7 @@
 const express = require('express');
 const Student = require('../models/Student');
 const User = require('../models/User');
-const { protect, adminOnly } = require('../middleware/auth');
+const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -12,6 +12,11 @@ const autoAssignInstructor = async (postalCode) => {
     active: true,
     postalCodes: { $in: [postalCode.trim().toUpperCase(), postalCode.trim()] }
   });
+};
+
+const canManageStudent = (user, student) => {
+  if (user.role === 'admin') return true;
+  return String(student.assignedInstructor || '') === String(user._id);
 };
 
 router.get('/', protect, async (req, res) => {
@@ -28,11 +33,18 @@ router.get('/', protect, async (req, res) => {
   res.json(students);
 });
 
-router.post('/', protect, adminOnly, async (req, res) => {
+router.post('/', protect, async (req, res) => {
+  if (!['admin', 'instructor'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Not allowed' });
+  }
+
   const payload = { ...req.body };
   payload.postalCode = String(payload.postalCode || '').trim().toUpperCase();
 
-  if (!payload.assignedInstructor) {
+  if (req.user.role === 'instructor') {
+    payload.assignedInstructor = req.user._id;
+    payload.status = payload.status || 'assigned';
+  } else if (!payload.assignedInstructor) {
     const instructor = await autoAssignInstructor(payload.postalCode);
     if (instructor) {
       payload.assignedInstructor = instructor._id;
@@ -47,21 +59,47 @@ router.post('/', protect, adminOnly, async (req, res) => {
   res.status(201).json(populated);
 });
 
-router.put('/:id', protect, adminOnly, async (req, res) => {
+router.put('/:id', protect, async (req, res) => {
+  if (!['admin', 'instructor'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Not allowed' });
+  }
+
+  const student = await Student.findById(req.params.id);
+  if (!student) return res.status(404).json({ message: 'Student not found' });
+
+  if (!canManageStudent(req.user, student)) {
+    return res.status(403).json({ message: 'Not allowed' });
+  }
+
   const payload = { ...req.body };
   if (payload.postalCode) payload.postalCode = String(payload.postalCode).trim().toUpperCase();
-  if (payload.assignedInstructor) payload.status = payload.status || 'assigned';
 
-  const student = await Student.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true })
-    .populate('assignedInstructor', 'name email phone postalCodes');
+  if (req.user.role === 'instructor') {
+    delete payload.assignedInstructor;
+  } else if (payload.assignedInstructor) {
+    payload.status = payload.status || 'assigned';
+  }
 
-  if (!student) return res.status(404).json({ message: 'Student not found' });
-  res.json(student);
+  Object.assign(student, payload);
+  await student.save();
+
+  const populated = await Student.findById(student._id).populate('assignedInstructor', 'name email phone postalCodes');
+  res.json(populated);
 });
 
-router.delete('/:id', protect, adminOnly, async (req, res) => {
-  const deleted = await Student.findByIdAndDelete(req.params.id);
-  if (!deleted) return res.status(404).json({ message: 'Student not found' });
+router.delete('/:id', protect, async (req, res) => {
+  if (!['admin', 'instructor'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Not allowed' });
+  }
+
+  const student = await Student.findById(req.params.id);
+  if (!student) return res.status(404).json({ message: 'Student not found' });
+
+  if (!canManageStudent(req.user, student)) {
+    return res.status(403).json({ message: 'Not allowed' });
+  }
+
+  await student.deleteOne();
   res.json({ message: 'Student deleted' });
 });
 
