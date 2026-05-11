@@ -69,7 +69,33 @@ const getAdminEmails = async (User) => {
   return admins.map((admin) => admin.email).filter(Boolean);
 };
 
-const sendTemplate = ({ to, template }) => sendEmail({ to, ...template });
+
+const sendTemplate = async ({ to, template }) => {
+  try {
+    return await sendEmail({ to, ...template });
+  } catch (error) {
+    console.error('Email template/send failed:', error.message);
+    return { skipped: true, reason: error.message };
+  }
+};
+
+const sendEmailSafely = async (label, emailPromise) => {
+  try {
+    const result = await emailPromise;
+    if (Array.isArray(result)) {
+      result.forEach((item) => {
+        if (item?.skipped) console.warn(`[Email skipped] ${label}: ${item.reason}`);
+      });
+    } else if (result?.skipped) {
+      console.warn(`[Email skipped] ${label}: ${result.reason}`);
+    }
+    return result;
+  } catch (error) {
+    console.error(`[Email failed] ${label}:`, error.message);
+    return { skipped: true, reason: error.message };
+  }
+};
+
 
 const sendStudentWelcomeEmail = async ({ student }) => {
   if (!student?.email) return { skipped: true, reason: 'Student email missing' };
@@ -125,6 +151,7 @@ const sendLessonAssignedToInstructorEmail = async ({ lesson }) => {
 
 module.exports = {
   sendEmail,
+  sendEmailSafely,
   fullName,
   sendStudentWelcomeEmail,
   sendStudentLessonAssignedEmail,
