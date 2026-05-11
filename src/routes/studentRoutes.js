@@ -2,6 +2,10 @@ const express = require('express');
 const Student = require('../models/Student');
 const User = require('../models/User');
 const { protect } = require('../middleware/auth');
+const {
+  sendStudentCreatedByInstructorEmail,
+  sendStudentWelcomeEmail
+} = require('../utils/email');
 
 const router = express.Router();
 
@@ -56,6 +60,17 @@ router.post('/', protect, async (req, res) => {
 
   const student = await Student.create(payload);
   const populated = await Student.findById(student._id).populate('assignedInstructor', 'name email phone postalCodes');
+
+  await sendStudentWelcomeEmail({ student: populated });
+
+  if (req.user.role === 'instructor') {
+    await sendStudentCreatedByInstructorEmail({
+      User,
+      student: populated,
+      instructor: req.user
+    });
+  }
+
   res.status(201).json(populated);
 });
 
