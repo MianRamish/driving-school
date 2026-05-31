@@ -1,6 +1,8 @@
 const express = require('express');
 const User = require('../models/User');
 const { protect, adminOnly } = require('../middleware/auth');
+const { sendInstructorCreatedSms } = require('../services/sms.service');
+const { notifyAdmins } = require('../services/notification.service');
 
 const router = express.Router();
 
@@ -26,6 +28,14 @@ router.post('/', protect, adminOnly, async (req, res) => {
       : String(postalCodes || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean),
     active: active !== false
   });
+
+  await Promise.all([
+    sendInstructorCreatedSms(instructor),
+    notifyAdmins({
+      title: 'New instructor added',
+      message: `${instructor.name || 'An instructor'} has been added to the system.`
+    })
+  ]);
 
   res.status(201).json(instructor.safe());
 });
