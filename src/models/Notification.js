@@ -6,7 +6,7 @@ const notificationSchema = new mongoose.Schema(
     lesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson', default: null, index: true },
     type: {
       type: String,
-      enum: ['lesson_assigned', 'lesson_reminder', 'lesson_cancelled', 'lesson_rescheduled', 'general'],
+      enum: ['lesson_assigned', 'lesson_reminder', 'general'],
       default: 'general',
       index: true
     },
