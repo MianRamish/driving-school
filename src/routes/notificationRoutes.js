@@ -1,8 +1,27 @@
 const express = require('express');
 const Notification = require('../models/Notification');
-const { protect } = require('../middleware/auth');
+const { protect, adminOnly } = require('../middleware/auth');
+const { safeSendSms, smsConfigStatus } = require('../services/sms.service');
 
 const router = express.Router();
+
+
+router.get('/sms-status', protect, adminOnly, async (req, res) => {
+  res.json(smsConfigStatus());
+});
+
+router.post('/test-sms', protect, adminOnly, async (req, res) => {
+  const { to, body } = req.body;
+  const result = await safeSendSms({
+    to,
+    body: body || 'Hi, this is a test SMS from Kudos Driving School.'
+  });
+
+  res.json({
+    message: result?.sid ? 'Test SMS sent' : 'Test SMS attempted',
+    result
+  });
+});
 
 router.get('/', protect, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 20, 50);
