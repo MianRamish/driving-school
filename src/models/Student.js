@@ -9,10 +9,12 @@ const studentSchema = new mongoose.Schema(
     postalCode: { type: String, required: true, trim: true },
     status: {
       type: String,
-      enum: ['new', 'assigned', 'active', 'completed', 'on-hold'],
+      enum: ['new', 'assigned', 'active', 'completed', 'on-hold', 'lost'],
       default: 'new'
     },
     notes: { type: String, default: '' },
+    lostReason: { type: String, default: '', trim: true },
+    lostAt: { type: Date, default: null },
     assignedInstructor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
   },
   { timestamps: true }
